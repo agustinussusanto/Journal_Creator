@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Copy, Check, Loader2, RefreshCw, BookOpen, Target, Lightbulb, Search, Beaker, FileText, Database, ChevronDown, ChevronUp, Sparkles, UploadCloud } from 'lucide-react';
+import { Copy, Check, Loader2, RefreshCw, BookOpen, Target, Lightbulb, Search, Beaker, FileText, Database, ChevronDown, ChevronUp, Sparkles, UploadCloud, AlertCircle, Settings, X } from 'lucide-react';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let ai: GoogleGenAI | null = null;
+try {
+  if (process.env.GEMINI_API_KEY) {
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  }
+} catch (e) {
+  console.error("Failed to initialize GoogleGenAI", e);
+}
 
 interface TitleResult {
   title: string;
@@ -27,6 +34,76 @@ interface Journal {
 }
 
 export default function App() {
+  const [apiProvider, setApiProvider] = useState<'default' | 'openrouter'>(() => (localStorage.getItem('apiProvider') as 'default' | 'openrouter') || 'default');
+  const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem('openRouterKey') || '');
+  const [openRouterModel, setOpenRouterModel] = useState(() => localStorage.getItem('openRouterModel') || 'google/gemini-2.5-flash');
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('apiProvider', apiProvider);
+    localStorage.setItem('openRouterKey', openRouterKey);
+    localStorage.setItem('openRouterModel', openRouterModel);
+  }, [apiProvider, openRouterKey, openRouterModel]);
+
+  const callAI = async (prompt: string, schema: any, isPdf: boolean = false, pdfData?: string) => {
+    if (apiProvider === 'default') {
+      if (!ai) throw new Error('API Key Gemini bawaan tidak ditemukan. Silakan gunakan OpenRouter di Pengaturan.');
+      
+      let contents: any = prompt;
+      if (isPdf && pdfData) {
+        contents = {
+          parts: [
+            { inlineData: { data: pdfData, mimeType: 'application/pdf' } },
+            { text: prompt }
+          ]
+        };
+      }
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: schema
+        }
+      });
+      return response.text;
+    } else {
+      if (!openRouterKey) throw new Error('API Key OpenRouter belum diisi. Silakan isi di Pengaturan.');
+      if (isPdf) throw new Error('Fitur ekstrak PDF saat ini hanya didukung menggunakan provider bawaan (Gemini). Silakan isi manual atau ganti provider.');
+
+      const systemPrompt = `You are a helpful assistant. You MUST respond ONLY in valid JSON format that matches this schema:\n${JSON.stringify(schema, null, 2)}\nDo not include markdown formatting like \`\`\`json. Just output the raw JSON object.`;
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openRouterKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "AI Title Generator"
+        },
+        body: JSON.stringify({
+          model: openRouterModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" }
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error?.message || "Terjadi kesalahan pada API OpenRouter.");
+      }
+
+      const data = await response.json();
+      let text = data.choices[0].message.content;
+      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      return text;
+    }
+  };
+
   const [journals, setJournals] = useState<Journal[]>(
     Array.from({ length: 10 }, () => ({
       peneliti: '',
@@ -106,38 +183,23 @@ export default function App() {
             "hasil": "Hasil utama penelitian (misal: X berpengaruh signifikan terhadap Y)"
           }`;
 
-          const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: {
-              parts: [
-                {
-                  inlineData: {
-                    data: base64Data,
-                    mimeType: 'application/pdf'
-                  }
-                },
-                { text: prompt }
-              ]
+          const schema = {
+            type: Type.OBJECT,
+            properties: {
+              peneliti: { type: Type.STRING },
+              judul: { type: Type.STRING },
+              masalah: { type: Type.STRING },
+              tujuan: { type: Type.STRING },
+              teori: { type: Type.STRING },
+              hasil: { type: Type.STRING },
             },
-            config: {
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  peneliti: { type: Type.STRING },
-                  judul: { type: Type.STRING },
-                  masalah: { type: Type.STRING },
-                  tujuan: { type: Type.STRING },
-                  teori: { type: Type.STRING },
-                  hasil: { type: Type.STRING },
-                },
-                required: ['peneliti', 'judul', 'masalah', 'tujuan', 'teori', 'hasil']
-              }
-            }
-          });
+            required: ['peneliti', 'judul', 'masalah', 'tujuan', 'teori', 'hasil']
+          };
 
-          if (response.text) {
-            const parsed = JSON.parse(response.text);
+          const responseText = await callAI(prompt, schema, true, base64Data);
+
+          if (responseText) {
+            const parsed = JSON.parse(responseText);
             const newJournals = [...journals];
             newJournals[index] = {
               peneliti: parsed.peneliti || '',
@@ -151,9 +213,9 @@ export default function App() {
           } else {
             setError('Gagal mengekstrak PDF. Silakan coba lagi atau isi manual.');
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error(err);
-          setError('Terjadi kesalahan saat memproses PDF dengan AI.');
+          setError(err.message || 'Terjadi kesalahan saat memproses PDF dengan AI.');
         } finally {
           setExtractingIndex(null);
           e.target.value = '';
@@ -163,9 +225,9 @@ export default function App() {
         setError('Gagal membaca file PDF.');
         setExtractingIndex(null);
       };
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError('Terjadi kesalahan sistem.');
+      setError(err.message || 'Terjadi kesalahan sistem.');
       setExtractingIndex(null);
     }
   };
@@ -217,54 +279,49 @@ Berikan jawaban dalam format JSON dengan struktur:
   ]
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              topikPenelitianOptions: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-              masalahNyata: { type: Type.STRING },
-              teoriPendukung: { type: Type.STRING },
-              tujuanPenelitianOptions: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-              metodePenelitianOptions: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-              nilaiKebaruanOptions: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-              journalAnalyses: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    originalIndex: { type: Type.INTEGER },
-                    topik: { type: Type.STRING },
-                    isTopikSesuai: { type: Type.BOOLEAN },
-                    pesanKesesuaian: { type: Type.STRING },
-                    researchGap: { type: Type.STRING },
-                  },
-                  required: ['originalIndex', 'topik', 'isTopikSesuai', 'pesanKesesuaian', 'researchGap'],
-                }
-              }
-            },
-            required: ['topikPenelitianOptions', 'masalahNyata', 'teoriPendukung', 'tujuanPenelitianOptions', 'metodePenelitianOptions', 'nilaiKebaruanOptions', 'journalAnalyses'],
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          topikPenelitianOptions: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
           },
+          masalahNyata: { type: Type.STRING },
+          teoriPendukung: { type: Type.STRING },
+          tujuanPenelitianOptions: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+          },
+          metodePenelitianOptions: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+          },
+          nilaiKebaruanOptions: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+          },
+          journalAnalyses: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                originalIndex: { type: Type.INTEGER },
+                topik: { type: Type.STRING },
+                isTopikSesuai: { type: Type.BOOLEAN },
+                pesanKesesuaian: { type: Type.STRING },
+                researchGap: { type: Type.STRING },
+              },
+              required: ['originalIndex', 'topik', 'isTopikSesuai', 'pesanKesesuaian', 'researchGap'],
+            }
+          }
         },
-      });
+        required: ['topikPenelitianOptions', 'masalahNyata', 'teoriPendukung', 'tujuanPenelitianOptions', 'metodePenelitianOptions', 'nilaiKebaruanOptions', 'journalAnalyses'],
+      };
 
-      if (response.text) {
-        const parsed = JSON.parse(response.text);
+      const responseText = await callAI(prompt, schema);
+
+      if (responseText) {
+        const parsed = JSON.parse(responseText);
         
         const options = parsed.topikPenelitianOptions || [];
         const tujuanOpts = parsed.tujuanPenelitianOptions || [];
@@ -309,9 +366,9 @@ Berikan jawaban dalam format JSON dengan struktur:
       } else {
         setError('Gagal menganalisis jurnal. Silakan coba lagi.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError('Terjadi kesalahan saat menghubungi AI untuk analisis jurnal.');
+      setError(err.message || 'Terjadi kesalahan saat menghubungi AI untuk analisis jurnal.');
     } finally {
       setLoadingAnalysis(false);
     }
@@ -350,12 +407,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
 - Spesifik objek (specificity)
 - Kekuatan akademik (strength)`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          titles: {
             type: Type.ARRAY,
             items: {
               type: Type.OBJECT,
@@ -373,22 +428,25 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
               },
               required: ['title', 'scores'],
             },
-          },
+          }
         },
-      });
+        required: ['titles']
+      };
 
-      if (response.text) {
-        const parsedResults = JSON.parse(response.text) as TitleResult[];
-        setResults(parsedResults);
+      const responseText = await callAI(prompt, schema);
+
+      if (responseText) {
+        const parsedResults = JSON.parse(responseText);
+        setResults(parsedResults.titles || parsedResults);
         setTimeout(() => {
           document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
       } else {
         setError('Gagal menghasilkan judul. Silakan coba lagi.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError('Terjadi kesalahan saat menghubungi AI untuk membuat judul.');
+      setError(err.message || 'Terjadi kesalahan saat menghubungi AI untuk membuat judul.');
     } finally {
       setLoadingTitles(false);
     }
@@ -411,6 +469,15 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-200 pb-20">
       {/* Header */}
       <header className="bg-blue-900 text-white py-12 px-4 shadow-md relative overflow-hidden">
+        <div className="absolute top-4 right-4 z-20">
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors backdrop-blur-sm border border-white/20"
+            title="Pengaturan API"
+          >
+            <Settings className="w-5 h-5 text-blue-100" />
+          </button>
+        </div>
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
           <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-blue-400 blur-3xl"></div>
           <div className="absolute top-12 right-12 w-64 h-64 rounded-full bg-indigo-400 blur-3xl"></div>
@@ -429,6 +496,109 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+        {showSettings && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between p-4 border-b border-slate-100">
+                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-slate-500" />
+                  Pengaturan API
+                </h3>
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-slate-700">Penyedia AI (API Provider)</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className={`flex items-center justify-center p-3 border rounded-xl cursor-pointer transition-all ${apiProvider === 'default' ? 'border-blue-500 bg-blue-50 text-blue-700 ring-1 ring-blue-500' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}>
+                      <input 
+                        type="radio" 
+                        name="apiProvider" 
+                        value="default" 
+                        checked={apiProvider === 'default'}
+                        onChange={() => setApiProvider('default')}
+                        className="sr-only"
+                      />
+                      <span className="font-medium text-sm">Gemini (Bawaan)</span>
+                    </label>
+                    <label className={`flex items-center justify-center p-3 border rounded-xl cursor-pointer transition-all ${apiProvider === 'openrouter' ? 'border-blue-500 bg-blue-50 text-blue-700 ring-1 ring-blue-500' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}>
+                      <input 
+                        type="radio" 
+                        name="apiProvider" 
+                        value="openrouter" 
+                        checked={apiProvider === 'openrouter'}
+                        onChange={() => setApiProvider('openrouter')}
+                        className="sr-only"
+                      />
+                      <span className="font-medium text-sm">OpenRouter</span>
+                    </label>
+                  </div>
+                </div>
+
+                {apiProvider === 'openrouter' && (
+                  <div className="space-y-4 animate-in slide-in-from-top-2">
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-slate-700">OpenRouter API Key</label>
+                      <input
+                        type="password"
+                        value={openRouterKey}
+                        onChange={(e) => setOpenRouterKey(e.target.value)}
+                        placeholder="sk-or-v1-..."
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-slate-700">Model OpenRouter</label>
+                      <input
+                        type="text"
+                        value={openRouterModel}
+                        onChange={(e) => setOpenRouterModel(e.target.value)}
+                        placeholder="google/gemini-2.5-flash"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      <p className="text-xs text-slate-500">Contoh: google/gemini-2.5-flash, anthropic/claude-3-haiku</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
+                >
+                  Selesai
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!ai && apiProvider === 'default' && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 flex gap-4 items-start shadow-sm">
+            <AlertCircle className="w-6 h-6 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-red-800 font-semibold mb-1">Konfigurasi API Key Diperlukan</h3>
+              <p className="text-red-700 text-sm leading-relaxed">
+                Aplikasi ini membutuhkan <strong>Gemini API Key</strong> untuk dapat berfungsi. Karena Anda melihat pesan ini, kemungkinan aplikasi sedang dijalankan di environment produksi (seperti Vercel) tanpa konfigurasi yang tepat.
+              </p>
+              <div className="mt-3 bg-white/60 rounded-lg p-3 text-sm text-red-800 border border-red-100">
+                <strong>Cara memperbaiki di Vercel:</strong>
+                <ol className="list-decimal ml-5 mt-1 space-y-1">
+                  <li>Buka dashboard Vercel project Anda.</li>
+                  <li>Masuk ke menu <strong>Settings</strong> &gt; <strong>Environment Variables</strong>.</li>
+                  <li>Tambahkan variable baru dengan Key: <code className="bg-red-100 px-1.5 py-0.5 rounded text-red-900 font-mono text-xs">GEMINI_API_KEY</code> dan Value: <em>[API Key Gemini Anda]</em>.</li>
+                  <li>Lakukan <strong>Redeploy</strong> (Deployments &gt; Redeploy) agar perubahan diterapkan.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-start gap-3 animate-in fade-in">
             <div className="mt-0.5">⚠️</div>
