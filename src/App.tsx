@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Copy, Check, Loader2, RefreshCw, BookOpen, Target, Lightbulb, Search, Beaker, FileText, Database, ChevronDown, ChevronUp, Sparkles, UploadCloud, AlertCircle, Settings, X } from 'lucide-react';
+import { Copy, Check, Loader2, RefreshCw, BookOpen, Target, Lightbulb, Search, Beaker, FileText, Database, ChevronDown, ChevronUp, Sparkles, UploadCloud, AlertCircle, Settings, X, Download, FileDown } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, BorderStyle, WidthType } from 'docx';
+import { saveAs } from 'file-saver';
 
 let ai: GoogleGenAI | null = null;
 try {
@@ -32,6 +36,18 @@ interface Journal {
   isTopikSesuai?: boolean;
   pesanKesesuaian?: string;
 }
+
+const GAP_TYPES = [
+  { id: 'knowledge', name: 'Knowledge Gap', desc: 'Kekurangan informasi atau pengetahuan yang belum dibahas.' },
+  { id: 'research', name: 'Research Gap', desc: 'Hasil penelitian sebelumnya belum konsisten atau masih terbatas.' },
+  { id: 'methodological', name: 'Methodological Gap', desc: 'Keterbatasan atau perbedaan metode penelitian yang digunakan.' },
+  { id: 'theoretical', name: 'Theoretical Gap', desc: 'Kurangnya penggunaan atau pengembangan teori.' },
+  { id: 'empirical', name: 'Empirical Gap', desc: 'Minimnya data atau bukti nyata di lapangan.' },
+  { id: 'practical', name: 'Practical Gap', desc: 'Perbedaan antara teori dan praktik di dunia nyata.' },
+  { id: 'population', name: 'Population Gap', desc: 'Penelitian belum mencakup subjek atau populasi tertentu.' },
+  { id: 'contextual', name: 'Contextual Gap', desc: 'Penelitian belum dilakukan pada konteks/lokasi/situasi tertentu.' },
+  { id: 'data', name: 'Data Gap', desc: 'Keterbatasan atau kurangnya data yang digunakan dalam penelitian.' },
+];
 
 export default function App() {
   const [apiProvider, setApiProvider] = useState<'default' | 'openrouter'>(() => (localStorage.getItem('apiProvider') as 'default' | 'openrouter') || 'default');
@@ -115,6 +131,21 @@ export default function App() {
     }))
   );
 
+  const addJournal = () => {
+    setJournals([...journals, {
+      peneliti: '',
+      judul: '',
+      masalah: '',
+      tujuan: '',
+      teori: '',
+      hasil: '',
+    }]);
+  };
+
+  const removeJournal = (index: number) => {
+    setJournals(journals.filter((_, i) => i !== index));
+  };
+
   const [formData, setFormData] = useState({
     areaStudi: '',
     masalahNyata: '',
@@ -132,6 +163,7 @@ export default function App() {
   const [expandedJournal, setExpandedJournal] = useState<number | null>(0);
   const [extractingIndex, setExtractingIndex] = useState<number | null>(null);
   const [temaUtama, setTemaUtama] = useState('');
+  const [selectedGapType, setSelectedGapType] = useState<string>('research');
   const [topikOptions, setTopikOptions] = useState<string[]>([]);
   const [tujuanOptions, setTujuanOptions] = useState<string[]>([]);
   const [metodeOptions, setMetodeOptions] = useState<string[]>([]);
@@ -141,6 +173,11 @@ export default function App() {
     const newJournals = [...journals];
     newJournals[index] = { ...newJournals[index], [field]: value };
     setJournals(newJournals);
+  };
+
+  const handleTextareaResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    e.target.style.height = 'auto';
+    e.target.style.height = `${e.target.scrollHeight}px`;
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -180,7 +217,7 @@ export default function App() {
             "masalah": "Masalah utama yang melatarbelakangi penelitian",
             "tujuan": "Tujuan utama penelitian",
             "teori": "Teori utama atau grand theory yang digunakan",
-            "hasil": "Hasil utama penelitian (misal: X berpengaruh signifikan terhadap Y)"
+            "hasil": "Sebutkan secara spesifik dan jelas variabel independen (X1, X2, X3, dst) dan variabel dependen (Y) beserta namanya. Jelaskan hasil signifikansi pengaruh masing-masing variabel X terhadap Y (misal: X1 (Nama Variabel) berpengaruh signifikan terhadap Y (Nama Variabel), X2 (Nama) tidak berpengaruh signifikan terhadap Y)."
           }`;
 
           const schema = {
@@ -244,12 +281,18 @@ export default function App() {
     setError('');
 
     try {
+      const selectedGap = GAP_TYPES.find(g => g.id === selectedGapType);
+      const gapInstruction = selectedGap 
+        ? `Fokuskan analisis gap pada jenis **${selectedGap.name}** (${selectedGap.desc}).` 
+        : '';
+
       const prompt = `Saya memiliki daftar jurnal penelitian berikut:
 ${JSON.stringify(filledJournalsWithIndex, null, 2)}
 
-${temaUtama.trim() ? `Pengguna telah menetapkan Tema Utama penelitian: "${temaUtama}".\n` : ''}Berdasarkan matriks jurnal di atas, tolong analisis dan tentukan:
-1. 3-5 pilihan Topik Penelitian (Area Studi) yang paling merepresentasikan tema umum dari jurnal-jurnal tersebut, disesuaikan dengan Research Gap yang ditemukan.
-2. Masalah Nyata (Research Gap umum), misalnya dari perbedaan hasil penelitian atau celah yang belum diteliti secara keseluruhan.
+${temaUtama.trim() ? `Pengguna telah menetapkan Tema Utama penelitian: "${temaUtama}".\n` : ''}${gapInstruction}
+Berdasarkan matriks jurnal di atas, tolong analisis dan tentukan:
+1. 3-5 pilihan Topik Penelitian (Area Studi) yang paling merepresentasikan tema umum dari jurnal-jurnal tersebut, disesuaikan dengan Gap yang ditemukan.
+2. Masalah Nyata (${selectedGap?.name || 'Research Gap'} umum), misalnya dari celah yang belum diteliti secara keseluruhan sesuai jenis gap yang dipilih.
 3. Teori Pendukung yang paling relevan atau sering digunakan dari jurnal-jurnal tersebut.
 4. 3-5 pilihan Tujuan Penelitian yang logis berdasarkan masalah nyata yang ditemukan.
 5. 3-5 pilihan Metode Penelitian yang paling cocok untuk menyelesaikan masalah tersebut (bisa dari metode yang paling berhasil di jurnal atau usulan metode baru).
@@ -258,7 +301,7 @@ ${temaUtama.trim() ? `Pengguna telah menetapkan Tema Utama penelitian: "${temaUt
    a. Topik spesifik dari jurnal tersebut.
    b. Apakah topik jurnal ini sesuai/sejalan dengan ${temaUtama.trim() ? `"Tema Utama" yang ditetapkan pengguna` : `"Topik Penelitian" utama`}? (true/false)
    c. Pesan informasi jika topik kurang sesuai (kosongkan jika sesuai).
-   d. Research Gap spesifik dari jurnal tersebut.
+   d. ${selectedGap?.name || 'Research Gap'} spesifik dari jurnal tersebut.
 
 Berikan jawaban dalam format JSON dengan struktur:
 {
@@ -458,6 +501,247 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(18);
+    doc.text('Hasil Analisis Jurnal & Rekomendasi Judul', 14, 22);
+    
+    doc.setFontSize(12);
+    doc.text(`Tema Utama: ${temaUtama || 'Tidak ditentukan'}`, 14, 32);
+    
+    let yPos = 45;
+    
+    // 1. Analisis Jurnal
+    doc.setFontSize(14);
+    doc.text('1. Analisis Jurnal', 14, yPos);
+    yPos += 10;
+    
+    const journalData = journals.map((j, i) => [
+      i + 1,
+      j.judul || '-',
+      j.peneliti || '-',
+      j.masalah || '-',
+      j.tujuan || '-',
+      j.hasil || '-',
+      j.researchGap || j.pesanKesesuaian || '-'
+    ]);
+    
+    autoTable(doc, {
+      startY: yPos,
+      head: [['No', 'Judul', 'Peneliti', 'Masalah', 'Tujuan', 'Hasil', 'Gap/Kesesuaian']],
+      body: journalData,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 30 },
+        5: { cellWidth: 30 },
+        6: { cellWidth: 30 }
+      }
+    });
+    
+    yPos = (doc as any).lastAutoTable.finalY + 15;
+    
+    // 2. Komponen Penelitian
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+    
+    doc.setFontSize(14);
+    doc.text('2. Komponen Penelitian', 14, yPos);
+    yPos += 10;
+    
+    const componentsData = [
+      ['Topik Penelitian', formData.areaStudi || '-'],
+      ['Masalah Nyata (Gap)', formData.masalahNyata || '-'],
+      ['Tujuan Penelitian', formData.tujuanPenelitian || '-'],
+      ['Metode / Pendekatan', formData.metodePenelitian || '-'],
+      ['Nilai Kebaruan (Novelty)', formData.nilaiKebaruan || '-'],
+      ['Teori Pendukung', formData.teoriPendukung || '-']
+    ];
+    
+    autoTable(doc, {
+      startY: yPos,
+      body: componentsData,
+      theme: 'grid',
+      styles: { fontSize: 10, cellPadding: 3 },
+      columnStyles: {
+        0: { cellWidth: 50, fontStyle: 'bold' },
+        1: { cellWidth: 130 }
+      }
+    });
+    
+    yPos = (doc as any).lastAutoTable.finalY + 15;
+    
+    // 3. Rekomendasi Judul
+    if (results.length > 0) {
+      if (yPos > 250) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.text('3. Rekomendasi Judul', 14, yPos);
+      yPos += 10;
+      
+      const titleData = results.map((r, i) => [
+        i + 1,
+        r.title,
+        `Kejelasan: ${r.scores.clarity}\nSpesifik: ${r.scores.specificity}\nAkademik: ${r.scores.strength}`
+      ]);
+      
+      autoTable(doc, {
+        startY: yPos,
+        head: [['No', 'Judul Rekomendasi', 'Skor']],
+        body: titleData,
+        theme: 'grid',
+        styles: { fontSize: 10, cellPadding: 3 },
+        columnStyles: {
+          0: { cellWidth: 15 },
+          1: { cellWidth: 120 },
+          2: { cellWidth: 45 }
+        }
+      });
+    }
+    
+    doc.save('Analisis_Jurnal_Rekomendasi_Judul.pdf');
+  };
+
+  const exportToWord = async () => {
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            text: 'Hasil Analisis Jurnal & Rekomendasi Judul',
+            heading: HeadingLevel.HEADING_1,
+          }),
+          new Paragraph({
+            text: `Tema Utama: ${temaUtama || 'Tidak ditentukan'}`,
+            spacing: { after: 400 },
+          }),
+          
+          new Paragraph({
+            text: '1. Analisis Jurnal',
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 400, after: 200 },
+          }),
+          
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              new TableRow({
+                children: [
+                  'No', 'Judul', 'Peneliti', 'Masalah', 'Tujuan', 'Hasil', 'Gap/Kesesuaian'
+                ].map(text => new TableCell({
+                  children: [new Paragraph({ text, style: 'Strong' })],
+                  shading: { fill: 'E2E8F0' },
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                }))
+              }),
+              ...journals.map((j, i) => new TableRow({
+                children: [
+                  (i + 1).toString(),
+                  j.judul || '-',
+                  j.peneliti || '-',
+                  j.masalah || '-',
+                  j.tujuan || '-',
+                  j.hasil || '-',
+                  j.researchGap || j.pesanKesesuaian || '-'
+                ].map(text => new TableCell({
+                  children: [new Paragraph({ text })],
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                }))
+              }))
+            ]
+          }),
+          
+          new Paragraph({
+            text: '2. Komponen Penelitian',
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 600, after: 200 },
+          }),
+          
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              ['Topik Penelitian', formData.areaStudi || '-'],
+              ['Masalah Nyata (Gap)', formData.masalahNyata || '-'],
+              ['Tujuan Penelitian', formData.tujuanPenelitian || '-'],
+              ['Metode / Pendekatan', formData.metodePenelitian || '-'],
+              ['Nilai Kebaruan (Novelty)', formData.nilaiKebaruan || '-'],
+              ['Teori Pendukung', formData.teoriPendukung || '-']
+            ].map(([label, value]) => new TableRow({
+              children: [
+                new TableCell({
+                  children: [new Paragraph({ text: label, style: 'Strong' })],
+                  shading: { fill: 'E2E8F0' },
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 },
+                  width: { size: 30, type: WidthType.PERCENTAGE }
+                }),
+                new TableCell({
+                  children: [new Paragraph({ text: value })],
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 },
+                  width: { size: 70, type: WidthType.PERCENTAGE }
+                })
+              ]
+            }))
+          }),
+          
+          ...(results.length > 0 ? [
+            new Paragraph({
+              text: '3. Rekomendasi Judul',
+              heading: HeadingLevel.HEADING_2,
+              spacing: { before: 600, after: 200 },
+            }),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              rows: [
+                new TableRow({
+                  children: [
+                    'No', 'Judul Rekomendasi', 'Skor'
+                  ].map(text => new TableCell({
+                    children: [new Paragraph({ text, style: 'Strong' })],
+                    shading: { fill: 'E2E8F0' },
+                    margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                  }))
+                }),
+                ...results.map((r, i) => new TableRow({
+                  children: [
+                    new TableCell({
+                      children: [new Paragraph({ text: (i + 1).toString() })],
+                      margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                    }),
+                    new TableCell({
+                      children: [new Paragraph({ text: r.title })],
+                      margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                    }),
+                    new TableCell({
+                      children: [
+                        new Paragraph({ text: `Kejelasan: ${r.scores.clarity}` }),
+                        new Paragraph({ text: `Spesifik: ${r.scores.specificity}` }),
+                        new Paragraph({ text: `Akademik: ${r.scores.strength}` })
+                      ],
+                      margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                    })
+                  ]
+                }))
+              ]
+            })
+          ] : [])
+        ]
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, 'Analisis_Jurnal_Rekomendasi_Judul.docx');
+  };
+
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'text-emerald-600 bg-emerald-50';
     if (score >= 80) return 'text-blue-600 bg-blue-50';
@@ -639,9 +923,17 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
             <div className="space-y-4">
               {journals.map((journal, index) => (
                 <div key={index} className="border border-slate-200 rounded-xl overflow-hidden transition-all">
-                  <button
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setExpandedJournal(expandedJournal === index ? null : index)}
-                    className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setExpandedJournal(expandedJournal === index ? null : index);
+                      }
+                    }}
+                    className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors text-left cursor-pointer"
                   >
                     <div className="flex items-center gap-3">
                       <span className="font-semibold text-slate-500 w-6">#{index + 1}</span>
@@ -664,8 +956,22 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                         </span>
                       )}
                     </div>
-                    {expandedJournal === index ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-                  </button>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {journals.length > 1 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeJournal(index);
+                          }}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Hapus Jurnal"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                      {expandedJournal === index ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                    </div>
+                  </div>
                   
                   {expandedJournal === index && (
                     <div className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-white border-t border-slate-200 animate-in slide-in-from-top-2 duration-200">
@@ -714,22 +1020,24 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Peneliti / Tahun</label>
-                        <input
-                          type="text"
+                        <textarea
                           value={journal.peneliti}
                           onChange={(e) => handleJournalChange(index, 'peneliti', e.target.value)}
+                          onInput={handleTextareaResize}
                           placeholder="Contoh: Smith et al. (2023)"
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm"
+                          rows={1}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none overflow-hidden"
                         />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Judul Penelitian</label>
-                        <input
-                          type="text"
+                        <textarea
                           value={journal.judul}
                           onChange={(e) => handleJournalChange(index, 'judul', e.target.value)}
+                          onInput={handleTextareaResize}
                           placeholder="Judul lengkap jurnal..."
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm"
+                          rows={1}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none overflow-hidden"
                         />
                       </div>
                       <div className="space-y-1">
@@ -737,9 +1045,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                         <textarea
                           value={journal.masalah}
                           onChange={(e) => handleJournalChange(index, 'masalah', e.target.value)}
+                          onInput={handleTextareaResize}
                           placeholder="Masalah yang diangkat..."
                           rows={2}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none overflow-hidden"
                         />
                       </div>
                       <div className="space-y-1">
@@ -747,29 +1056,32 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                         <textarea
                           value={journal.tujuan}
                           onChange={(e) => handleJournalChange(index, 'tujuan', e.target.value)}
+                          onInput={handleTextareaResize}
                           placeholder="Tujuan penelitian..."
                           rows={2}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none overflow-hidden"
                         />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Teori</label>
-                        <input
-                          type="text"
+                        <textarea
                           value={journal.teori}
                           onChange={(e) => handleJournalChange(index, 'teori', e.target.value)}
+                          onInput={handleTextareaResize}
                           placeholder="Teori yang digunakan..."
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm"
+                          rows={1}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none overflow-hidden"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Hasil (Signifikan/Tidak)</label>
+                        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Variabel (X & Y) & Hasil Signifikansi</label>
                         <textarea
                           value={journal.hasil}
                           onChange={(e) => handleJournalChange(index, 'hasil', e.target.value)}
-                          placeholder="Contoh: X berpengaruh signifikan terhadap Y..."
+                          onInput={handleTextareaResize}
+                          placeholder="Contoh: X1 (Harga) dan X2 (Promosi) berpengaruh signifikan terhadap Y (Keputusan Pembelian)..."
                           rows={2}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-sm resize-none overflow-hidden"
                         />
                       </div>
                       {journal.topik !== undefined && (
@@ -809,11 +1121,72 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
               ))}
             </div>
 
-            <div className="mt-8 flex justify-end">
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={addJournal}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+              >
+                + Tambah Jurnal
+              </button>
+            </div>
+
+            {journals.some(j => j.topik) && (
+              <div className="mt-8 overflow-x-auto border border-slate-200 rounded-xl shadow-sm">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-blue-900 text-white">
+                      <th className="p-3 border border-blue-800 font-semibold w-12 text-center">No</th>
+                      <th className="p-3 border border-blue-800 font-semibold whitespace-nowrap w-auto">Nama (Peneliti)</th>
+                      <th className="p-3 border border-blue-800 font-semibold min-w-[200px]">Judul</th>
+                      <th className="p-3 border border-blue-800 font-semibold min-w-[200px]">Masalah</th>
+                      <th className="p-3 border border-blue-800 font-semibold min-w-[150px]">Tujuan</th>
+                      <th className="p-3 border border-blue-800 font-semibold min-w-[150px]">Teori</th>
+                      <th className="p-3 border border-blue-800 font-semibold min-w-[200px]">Variabel (X & Y) & Hasil Signifikansi</th>
+                      <th className="p-3 border border-blue-800 font-semibold min-w-[150px] bg-indigo-800">Topik Analisis</th>
+                      <th className="p-3 border border-blue-800 font-semibold min-w-[200px] bg-indigo-800">{GAP_TYPES.find(g => g.id === selectedGapType)?.name || 'Research Gap'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {journals.map((journal, index) => (
+                      <tr key={index} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 border border-slate-200 text-center text-slate-500 font-medium">{index + 1}</td>
+                        <td className="p-3 border border-slate-200 whitespace-nowrap">{journal.peneliti || '-'}</td>
+                        <td className="p-3 border border-slate-200">{journal.judul || '-'}</td>
+                        <td className="p-3 border border-slate-200">{journal.masalah || '-'}</td>
+                        <td className="p-3 border border-slate-200">{journal.tujuan || '-'}</td>
+                        <td className="p-3 border border-slate-200">{journal.teori || '-'}</td>
+                        <td className="p-3 border border-slate-200">{journal.hasil || '-'}</td>
+                        <td className="p-3 border border-slate-200 bg-indigo-50/30">
+                          {journal.topik || '-'}
+                          {journal.isTopikSesuai === false && (
+                            <div className="mt-1 text-xs text-amber-600">⚠️ Kurang Sesuai</div>
+                          )}
+                        </td>
+                        <td className="p-3 border border-slate-200 bg-indigo-50/30">{journal.researchGap || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-end gap-4">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Jenis Gap:</label>
+                <select
+                  value={selectedGapType}
+                  onChange={(e) => setSelectedGapType(e.target.value)}
+                  className="w-full sm:w-auto px-3 py-2.5 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-sm bg-white"
+                >
+                  {GAP_TYPES.map(gap => (
+                    <option key={gap.id} value={gap.id}>{gap.name}</option>
+                  ))}
+                </select>
+              </div>
               <button
                 onClick={analyzeJournals}
                 disabled={loadingAnalysis}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-md shadow-indigo-600/20 transition-all flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {loadingAnalysis ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -851,9 +1224,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                   name="areaStudi"
                   value={formData.areaStudi}
                   onChange={handleInputChange}
+                  onInput={handleTextareaResize}
                   placeholder="Contoh: Pemasaran Digital, Kecerdasan Buatan..."
                   rows={2}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none overflow-hidden"
                 />
                 {topikOptions.length > 0 && (
                   <div className="mt-2">
@@ -887,9 +1261,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                   name="masalahNyata"
                   value={formData.masalahNyata}
                   onChange={handleInputChange}
+                  onInput={handleTextareaResize}
                   placeholder="Contoh: Terdapat perbedaan hasil penelitian terdahulu (Edivance Gap)..."
                   rows={2}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none overflow-hidden"
                 />
               </div>
 
@@ -903,9 +1278,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                   name="tujuanPenelitian"
                   value={formData.tujuanPenelitian}
                   onChange={handleInputChange}
+                  onInput={handleTextareaResize}
                   placeholder="Contoh: Menguji pengaruh X terhadap Y..."
                   rows={2}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none overflow-hidden"
                 />
                 {tujuanOptions.length > 0 && (
                   <div className="mt-2">
@@ -939,9 +1315,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                   name="metodePenelitian"
                   value={formData.metodePenelitian}
                   onChange={handleInputChange}
+                  onInput={handleTextareaResize}
                   placeholder="Contoh: Kuantitatif, Algoritma CNN, Studi Kasus..."
                   rows={2}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none overflow-hidden"
                 />
                 {metodeOptions.length > 0 && (
                   <div className="mt-2">
@@ -975,9 +1352,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                   name="nilaiKebaruan"
                   value={formData.nilaiKebaruan}
                   onChange={handleInputChange}
+                  onInput={handleTextareaResize}
                   placeholder="Contoh: Menambahkan variabel moderasi Z..."
                   rows={2}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none overflow-hidden"
                 />
                 {kebaruanOptions.length > 0 && (
                   <div className="mt-2">
@@ -1011,9 +1389,10 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                   name="teoriPendukung"
                   value={formData.teoriPendukung}
                   onChange={handleInputChange}
+                  onInput={handleTextareaResize}
                   placeholder="Contoh: Technology Acceptance Model (TAM)..."
                   rows={2}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-slate-50 focus:bg-white resize-none overflow-hidden"
                 />
               </div>
             </div>
@@ -1051,14 +1430,30 @@ Selain judul, berikan juga skor kualitas (skala 1-100) untuk masing-masing judul
                   <p className="text-slate-500">10 variasi judul berdasarkan input Anda.</p>
                 </div>
               </div>
-              <button
-                onClick={generateTitles}
-                disabled={loadingTitles}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors font-medium text-sm shadow-sm"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingTitles ? 'animate-spin' : ''}`} />
-                Generate Judul Baru
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={exportToPDF}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors font-medium text-sm shadow-sm"
+                >
+                  <FileText className="w-4 h-4" />
+                  Export PDF
+                </button>
+                <button
+                  onClick={exportToWord}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors font-medium text-sm shadow-sm"
+                >
+                  <FileDown className="w-4 h-4" />
+                  Export Word
+                </button>
+                <button
+                  onClick={generateTitles}
+                  disabled={loadingTitles}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors font-medium text-sm shadow-sm"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingTitles ? 'animate-spin' : ''}`} />
+                  Generate Judul Baru
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-4">
