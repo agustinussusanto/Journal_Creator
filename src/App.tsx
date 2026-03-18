@@ -217,7 +217,7 @@ export default function App() {
             "masalah": "Masalah utama yang melatarbelakangi penelitian",
             "tujuan": "Tujuan utama penelitian",
             "teori": "Teori utama atau grand theory yang digunakan",
-            "hasil": "Sebutkan secara spesifik dan jelas variabel independen (X1, X2, X3, dst) dan variabel dependen (Y) beserta namanya. Jelaskan hasil signifikansi pengaruh masing-masing variabel X terhadap Y (misal: X1 (Nama Variabel) berpengaruh signifikan terhadap Y (Nama Variabel), X2 (Nama) tidak berpengaruh signifikan terhadap Y)."
+            "hasil": "Sebutkan secara spesifik variabel independen (X) dan variabel dependen (Y) beserta namanya. PENTING: Variabel dependen (Y) HANYA BOLEH ADA 1. Sedangkan jumlah variabel independen (X) HARUS disesuaikan dengan isi jurnal yang sebenarnya (bisa 1, 2, 3, atau bahkan sampai 10 variabel X, tidak harus 3). Jelaskan hasil signifikansi pengaruh masing-masing variabel X terhadap Y (misal: X1 (Nama Variabel) berpengaruh signifikan terhadap Y (Nama Variabel), X2 (Nama) tidak berpengaruh signifikan terhadap Y)."
           }`;
 
           const schema = {
