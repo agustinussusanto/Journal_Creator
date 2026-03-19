@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: admins
+    // Document ID: email
+    // Fields:
+    //   - email: string (required)
+    //   - role: string (required)
+    //
+    // Collection: allowed_emails
+    // Document ID: email
+    // Fields:
+    //   - email: string (required)
+    //   - addedAt: string (required)
+    //
+    // Collection: otp_codes
+    // Document ID: hashed OTP
+    // Fields:
+    //   - email: string (required)
+    //   - expiresAt: number (required)
+    //   - used: boolean (required)
+    //
+    // Collection: rate_limits
+    // Document ID: email
+    // Fields:
+    //   - count: number (required)
+    //   - lastRequest: number (required)
+    //
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
+    }
+
+    match /admins/{email} {
+      allow read: if true;
+      allow write: if false; // Only manually added or bootstrapped
+    }
+
+    match /allowed_emails/{email} {
+      // Anyone can check if their email is in the whitelist
+      allow get: if true;
+      // Only admins can list or write
+      allow list, write: if isAdmin();
+    }
+
+    match /otp_codes/{otpHash} {
+      // Anyone can create an OTP code
+      allow create: if true
+                    && request.resource.data.keys().hasAll(['email', 'expiresAt', 'used'])
+                    && request.resource.data.used == false;
+      
+      // Anyone can get an OTP code if they know its hash
+      allow get: if true;
+      
+      // Anyone can update it to used
+      allow update: if true
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used'])
+                    && request.resource.data.used == true;
+      
+      allow list: if false; // Cannot list OTPs
+    }
+
+    match /rate_limits/{email} {
+      allow get: if true;
+      allow set, update: if true;
+      allow list: if false;
+    }
+  }
+}

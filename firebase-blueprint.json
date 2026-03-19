@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "Admin": {
+      "title": "Admin",
+      "description": "Administrator of the system",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    },
+    "AllowedEmail": {
+      "title": "Allowed Email",
+      "description": "Email allowed to login",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "addedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "addedAt"]
+    },
+    "OtpCode": {
+      "title": "OTP Code",
+      "description": "Hashed OTP code for verification",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "expiresAt": { "type": "number" },
+        "used": { "type": "boolean" }
+      },
+      "required": ["email", "expiresAt", "used"]
+    },
+    "RateLimit": {
+      "title": "Rate Limit",
+      "description": "Rate limiting for OTP requests",
+      "type": "object",
+      "properties": {
+        "count": { "type": "number" },
+        "lastRequest": { "type": "number" }
+      },
+      "required": ["count", "lastRequest"]
+    }
+  },
+  "firestore": {
+    "/admins/{email}": {
+      "schema": { "$ref": "#/entities/Admin" },
+      "description": "List of administrators"
+    },
+    "/allowed_emails/{email}": {
+      "schema": { "$ref": "#/entities/AllowedEmail" },
+      "description": "Whitelist of emails allowed to login"
+    },
+    "/otp_codes/{otpHash}": {
+      "schema": { "$ref": "#/entities/OtpCode" },
+      "description": "Hashed OTP codes"
+    },
+    "/rate_limits/{email}": {
+      "schema": { "$ref": "#/entities/RateLimit" },
+      "description": "Rate limiting for OTP requests"
+    }
+  }
+}
