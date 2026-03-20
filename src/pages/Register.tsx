@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Lock, Mail, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { Lock, Mail, ArrowRight, UserPlus, CheckCircle2 } from 'lucide-react';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 
-export default function Login() {
+export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -15,29 +15,31 @@ export default function Login() {
   const [isSuccess, setIsSuccess] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      localStorage.setItem('user_session', email);
+      await createUserWithEmailAndPassword(auth, email, password);
       setIsSuccess(true);
       
       setTimeout(() => {
-        navigate('/dashboard');
-      }, 1500);
+        navigate('/login');
+      }, 2000);
     } catch (err: any) {
-      console.error('Login error:', err);
-      setError('Email atau password salah, atau akun belum terdaftar.');
+      console.error('Registration error:', err);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('Metode pendaftaran belum diaktifkan di Firebase Console. Silakan hubungi administrator.');
+      } else {
+        setError(err.message || 'Gagal mendaftar. Silakan coba lagi.');
+      }
       setIsLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 font-sans relative overflow-hidden">
-      {/* Background decoration */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-500/10 blur-[100px]" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-purple-500/10 blur-[100px]" />
 
@@ -48,17 +50,17 @@ export default function Login() {
       >
         <div className="mb-8 text-center">
           <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
-            <ShieldCheck className="w-6 h-6" />
+            <UserPlus className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Welcome back</h1>
-          <p className="text-sm text-slate-500 mt-2">Enter your email and password to continue.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Create Account</h1>
+          <p className="text-sm text-slate-500 mt-2">Join us to get started.</p>
         </div>
 
         {!isSuccess ? (
           <motion.form 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            onSubmit={handleLogin}
+            onSubmit={handleRegister}
             className="space-y-5"
           >
             <Input
@@ -84,13 +86,13 @@ export default function Login() {
               className="w-full" 
               isLoading={isLoading}
             >
-              Sign In
+              Register
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
             <p className="text-center text-sm text-slate-500 mt-4">
-              Don't have an account?{' '}
-              <Link to="/register" className="text-indigo-600 hover:underline font-medium">
-                Register
+              Already have an account?{' '}
+              <Link to="/login" className="text-indigo-600 hover:underline font-medium">
+                Sign In
               </Link>
             </p>
           </motion.form>
@@ -101,8 +103,8 @@ export default function Login() {
             className="flex flex-col items-center justify-center py-8 space-y-4"
           >
             <CheckCircle2 className="w-16 h-16 text-emerald-500" />
-            <h2 className="text-xl font-medium text-slate-900">Login Successful</h2>
-            <p className="text-sm text-slate-500">Redirecting to dashboard...</p>
+            <h2 className="text-xl font-medium text-slate-900">Registration Successful</h2>
+            <p className="text-sm text-slate-500">Redirecting to login page...</p>
           </motion.div>
         )}
       </motion.div>
