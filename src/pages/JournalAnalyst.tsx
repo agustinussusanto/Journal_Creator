@@ -34,6 +34,13 @@ interface AnalysisResult {
     strengths: string[];
     weaknesses: string[];
   };
+  background: string;
+  purpose: string;
+  theory: string;
+  independentVariable: string;
+  dependentVariable: string;
+  results: string;
+  professorAnalysis: string;
 }
 
 export default function JournalAnalyst() {
@@ -68,9 +75,15 @@ export default function JournalAnalyst() {
 
     try {
       const prompt = `
-        Analisis teks jurnal akademik berikut secara mendalam dan berikan hasil yang sangat terstruktur.
-        Gunakan bahasa Indonesia formal akademik.
+        Analisis jurnal ilmiah yang saya berikan dan sajikan hasilnya dalam format terstruktur akademik dengan bahasa formal, jelas, dan tidak bertele-tele.
         
+        WAJIB:
+        Gunakan hanya informasi yang benar-benar ada dalam jurnal
+        DILARANG membuat asumsi atau menambahkan informasi yang tidak tersedia (anti halusinasi)
+        Jika informasi tidak ditemukan, tulis: “tidak disebutkan”
+        Gunakan bahasa Indonesia formal akademik
+        Ringkas tetapi tetap substantif dan mendalam
+
         Teks Jurnal:
         ${textToAnalyze}
 
@@ -83,19 +96,26 @@ export default function JournalAnalyst() {
           "abstract": "Ringkasan Abstrak",
           "problemStatement": "Rumusan Masalah Utama",
           "methodology": {
-            "type": "Jenis Penelitian (Kuantitatif/Kualitatif/dll)",
+            "type": "Jenis Penelitian (Kualitatif/Kuantitatif/Mixed Method)",
             "sample": "Populasi dan Sampel",
             "dataAnalysis": "Teknik Analisis Data"
           },
           "keyFindings": ["Temuan 1", "Temuan 2", "..."],
-          "limitations": ["Keterbatasan 1", "Keterbatasan 2", "..."],
-          "researchGap": "Penjelasan Research Gap yang ditemukan",
+          "limitations": ["Keterbatasan 1", "Keterbatasan 2", "... (jika tidak disebutkan, tulis: tidak disebutkan)"],
+          "researchGap": "Identifikasi gap penelitian: theoretical gap / empirical gap / practical gap / contextual gap, jelaskan secara singkat",
           "novelty": "Nilai Kebaruan Penelitian",
           "recommendations": ["Rekomendasi 1", "Rekomendasi 2", "..."],
           "criticalReview": {
             "strengths": ["Kelebihan 1", "Kelebihan 2"],
             "weaknesses": ["Kekurangan 1", "Kekurangan 2"]
-          }
+          },
+          "background": "Latar Belakang",
+          "purpose": "Tujuan Penelitian",
+          "theory": "Teori yang digunakan",
+          "independentVariable": "Variabel Independen (X) [X1, X2, dst jika ada, jika tidak tulis: tidak disebutkan]",
+          "dependentVariable": "Variabel Dependen (Y) [Y, jika tidak ada tulis: tidak disebutkan]",
+          "results": "Hasil Penelitian",
+          "professorAnalysis": "Analisis mendalam dari sudut pandang profesor, dengan mengaitkan hubungan antara Variabel Independen (X) dan Variabel Dependen (Y) yang telah diidentifikasi."
         }
       `;
 
@@ -134,13 +154,21 @@ export default function JournalAnalyst() {
                   weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } }
                 },
                 required: ['strengths', 'weaknesses']
-              }
+              },
+              background: { type: Type.STRING },
+              purpose: { type: Type.STRING },
+              theory: { type: Type.STRING },
+              independentVariable: { type: Type.STRING },
+              dependentVariable: { type: Type.STRING },
+              results: { type: Type.STRING },
+              professorAnalysis: { type: Type.STRING }
             },
             required: [
               'title', 'authors', 'year', 'journalName', 'abstract', 
               'problemStatement', 'methodology', 'keyFindings', 
               'limitations', 'researchGap', 'novelty', 'recommendations', 
-              'criticalReview'
+              'criticalReview', 'background', 'purpose', 'theory', 
+              'independentVariable', 'dependentVariable', 'results', 'professorAnalysis'
             ]
           }
         }
@@ -178,9 +206,45 @@ export default function JournalAnalyst() {
           const base64Data = (reader.result as string).split(',')[1];
           
           const prompt = `
-            Analisis file PDF jurnal akademik ini secara mendalam dan berikan hasil yang sangat terstruktur.
-            Gunakan bahasa Indonesia formal akademik.
-            Berikan output dalam format JSON VALID.
+            Analisis jurnal ilmiah yang saya berikan dan sajikan hasilnya dalam format terstruktur akademik dengan bahasa formal, jelas, dan tidak bertele-tele.
+            
+            WAJIB:
+            Gunakan hanya informasi yang benar-benar ada dalam jurnal
+            DILARANG membuat asumsi atau menambahkan informasi yang tidak tersedia (anti halusinasi)
+            Jika informasi tidak ditemukan, tulis: “tidak disebutkan”
+            Gunakan bahasa Indonesia formal akademik
+            Ringkas tetapi tetap substantif dan mendalam
+
+            Berikan output dalam format JSON VALID dengan struktur berikut:
+            {
+              "title": "Judul Lengkap",
+              "authors": "Nama Penulis",
+              "year": "Tahun Terbit",
+              "journalName": "Nama Jurnal",
+              "abstract": "Ringkasan Abstrak",
+              "problemStatement": "Rumusan Masalah Utama",
+              "methodology": {
+                "type": "Jenis Penelitian (Kualitatif/Kuantitatif/Mixed Method)",
+                "sample": "Populasi dan Sampel",
+                "dataAnalysis": "Teknik Analisis Data"
+              },
+              "keyFindings": ["Temuan 1", "Temuan 2", "..."],
+              "limitations": ["Keterbatasan 1", "Keterbatasan 2", "... (jika tidak disebutkan, tulis: tidak disebutkan)"],
+              "researchGap": "Identifikasi gap penelitian: theoretical gap / empirical gap / practical gap / contextual gap, jelaskan secara singkat",
+              "novelty": "Nilai Kebaruan Penelitian",
+              "recommendations": ["Rekomendasi 1", "Rekomendasi 2", "..."],
+              "criticalReview": {
+                "strengths": ["Kelebihan 1", "Kelebihan 2"],
+                "weaknesses": ["Kekurangan 1", "Kekurangan 2"]
+              },
+              "background": "Latar Belakang",
+              "purpose": "Tujuan Penelitian",
+              "theory": "Teori yang digunakan",
+              "independentVariable": "Variabel Independen (X) [X1, X2, dst jika ada, jika tidak tulis: tidak disebutkan]",
+              "dependentVariable": "Variabel Dependen (Y) [Y, jika tidak ada tulis: tidak disebutkan]",
+              "results": "Hasil Penelitian",
+              "professorAnalysis": "Analisis mendalam dari sudut pandang profesor, dengan mengaitkan hubungan antara Variabel Independen (X) dan Variabel Dependen (Y) yang telah diidentifikasi."
+            }
           `;
 
           const response = await ai.models.generateContent({
@@ -223,13 +287,21 @@ export default function JournalAnalyst() {
                       weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } }
                     },
                     required: ['strengths', 'weaknesses']
-                  }
+                  },
+                  background: { type: Type.STRING },
+                  purpose: { type: Type.STRING },
+                  theory: { type: Type.STRING },
+                  independentVariable: { type: Type.STRING },
+                  dependentVariable: { type: Type.STRING },
+                  results: { type: Type.STRING },
+                  professorAnalysis: { type: Type.STRING }
                 },
                 required: [
                   'title', 'authors', 'year', 'journalName', 'abstract', 
                   'problemStatement', 'methodology', 'keyFindings', 
                   'limitations', 'researchGap', 'novelty', 'recommendations', 
-                  'criticalReview'
+                  'criticalReview', 'background', 'purpose', 'theory', 
+                  'independentVariable', 'dependentVariable', 'results', 'professorAnalysis'
                 ]
               }
             }
@@ -550,6 +622,41 @@ export default function JournalAnalyst() {
                 </AnimatePresence>
 
                 {/* Critical Review Section */}
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+                  <h3 className="text-xl font-bold text-slate-900 mb-6">Analisis Mendalam (Profesor)</h3>
+                  <p className="text-slate-700 leading-relaxed">{result.professorAnalysis}</p>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+                  <h3 className="text-xl font-bold text-slate-900 mb-6">Detail Penelitian</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Latar Belakang</h4>
+                      <p className="text-sm text-slate-600">{result.background}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Tujuan</h4>
+                      <p className="text-sm text-slate-600">{result.purpose}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Teori</h4>
+                      <p className="text-sm text-slate-600">{result.theory}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Variabel Independen (X)</h4>
+                      <p className="text-sm text-slate-600">{result.independentVariable}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Variabel Dependen (Y)</h4>
+                      <p className="text-sm text-slate-600">{result.dependentVariable}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Hasil</h4>
+                      <p className="text-sm text-slate-600">{result.results}</p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
                   <h3 className="text-xl font-bold text-slate-900 mb-6">Review Kritis</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
