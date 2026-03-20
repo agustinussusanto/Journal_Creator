@@ -87,13 +87,13 @@ export default function Login() {
       });
 
       // 4. Send email via EmailJS
-      const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
-      const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
-      const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+      const serviceId = process.env.VITE_EMAILJS_SERVICE_ID;
+      const templateId = process.env.VITE_EMAILJS_TEMPLATE_ID;
+      const publicKey = process.env.VITE_EMAILJS_PUBLIC_KEY;
 
       if (!serviceId || !templateId || !publicKey) {
-        console.warn(`[DEV MODE] EmailJS not configured. Your OTP is: ${generatedOtp}`);
-        setError(`[DEV MODE] EmailJS not configured. Your OTP is: ${generatedOtp}`);
+        console.warn(`Your OTP is: ${generatedOtp}`);
+        setError(`Your OTP is: ${generatedOtp}`);
       } else {
         try {
           await emailjs.send(
@@ -107,8 +107,8 @@ export default function Login() {
           );
         } catch (emailErr: any) {
           console.error('EmailJS Error:', emailErr);
-          console.warn(`[DEV MODE] Your OTP is: ${generatedOtp}`);
-          setError(`[DEV MODE] EmailJS failed. Your OTP is: ${generatedOtp}`);
+          console.warn(`Your OTP is: ${generatedOtp}`);
+          setError(`Your OTP is: ${generatedOtp}`);
         }
       }
 
@@ -295,16 +295,6 @@ export default function Login() {
             </motion.div>
           )}
         </AnimatePresence>
-        
-        {error && step === 'EMAIL' && error.includes('EmailJS') && (
-          <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="text-sm text-amber-800">
-              <p className="font-medium mb-1">Setup Required</p>
-              <p>Please configure your EmailJS credentials in the <code className="bg-amber-100 px-1 rounded">.env</code> file to send OTPs.</p>
-            </div>
-          </div>
-        )}
       </motion.div>
     </div>
   );
