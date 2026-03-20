@@ -1,5 +1,5 @@
 {
-  "name": "Smart Research Title Builder",
-  "description": "Aplikasi web untuk membantu mahasiswa membuat judul penelitian akademik menggunakan metode Research Builder Framework.",
+  "name": "JurnalSintesis RMC",
+  "description": "Aplikasi analisis dan sintesis jurnal akademik berdasarkan Research Model Canvas (RMC) dengan format narasi yang terstruktur dan mudah dibaca.",
   "requestFramePermissions": []
 }

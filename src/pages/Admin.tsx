@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ShieldAlert, LogOut, Plus, Trash2, Users, Mail, Loader2 } from 'lucide-react';
-import { db, auth, googleProvider } from '../lib/firebase';
+import { ShieldAlert, LogOut, Plus, Trash2, Users, Mail, Loader2, KeyRound } from 'lucide-react';
+import { db, auth, googleProvider, handleFirestoreError, OperationType } from '../lib/firebase';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { Button } from '../components/ui/Button';
@@ -10,6 +10,7 @@ import { Input } from '../components/ui/Input';
 
 interface AllowedEmail {
   email: string;
+  password?: string;
   addedAt: string;
 }
 
@@ -17,6 +18,7 @@ export default function Admin() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [emails, setEmails] = useState<AllowedEmail[]>([]);
   const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +28,14 @@ export default function Admin() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.email) {
         try {
-          const adminDoc = await getDoc(doc(db, 'admins', user.email));
+          const adminPath = `admins/${user.email}`;
+          let adminDoc;
+          try {
+            adminDoc = await getDoc(doc(db, 'admins', user.email));
+          } catch (err) {
+            handleFirestoreError(err, OperationType.GET, adminPath);
+            return;
+          }
           if (adminDoc.exists()) {
             setIsAdmin(true);
             fetchEmails();
@@ -51,7 +60,14 @@ export default function Admin() {
 
   const fetchEmails = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, 'allowed_emails'));
+      const path = 'allowed_emails';
+      let querySnapshot;
+      try {
+        querySnapshot = await getDocs(collection(db, path));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.LIST, path);
+        return;
+      }
       const fetchedEmails: AllowedEmail[] = [];
       querySnapshot.forEach((doc) => {
         fetchedEmails.push(doc.data() as AllowedEmail);
@@ -86,17 +102,29 @@ export default function Admin() {
       setError('Please enter a valid email address');
       return;
     }
+    if (!newPassword || newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
 
     setIsAdding(true);
     setError('');
 
     try {
       const emailLower = newEmail.toLowerCase().trim();
-      await setDoc(doc(db, 'allowed_emails', emailLower), {
-        email: emailLower,
-        addedAt: new Date().toISOString()
-      });
+      const path = `allowed_emails/${emailLower}`;
+      try {
+        await setDoc(doc(db, 'allowed_emails', emailLower), {
+          email: emailLower,
+          password: newPassword,
+          addedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, path);
+        return;
+      }
       setNewEmail('');
+      setNewPassword('');
       await fetchEmails();
     } catch (err: any) {
       console.error(err);
@@ -110,7 +138,13 @@ export default function Admin() {
     if (!window.confirm(`Are you sure you want to remove ${emailToDelete}?`)) return;
     
     try {
-      await deleteDoc(doc(db, 'allowed_emails', emailToDelete));
+      const path = `allowed_emails/${emailToDelete}`;
+      try {
+        await deleteDoc(doc(db, 'allowed_emails', emailToDelete));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, path);
+        return;
+      }
       await fetchEmails();
     } catch (err) {
       console.error(err);
@@ -181,9 +215,17 @@ export default function Admin() {
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   icon={<Mail className="w-4 h-4" />}
-                  error={error}
                   required
                 />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  icon={<KeyRound className="w-4 h-4" />}
+                  required
+                />
+                {error && <p className="text-red-500 text-xs">{error}</p>}
                 <Button type="submit" className="w-full" isLoading={isAdding}>
                   <Plus className="w-4 h-4 mr-2" />
                   Add to Whitelist
@@ -221,6 +263,7 @@ export default function Admin() {
                         </div>
                         <div>
                           <p className="text-sm font-medium text-slate-900">{item.email}</p>
+                          <p className="text-xs text-slate-500">Password: {item.password || 'Not set'}</p>
                           <p className="text-xs text-slate-500">Added {new Date(item.addedAt).toLocaleDateString()}</p>
                         </div>
                       </div>

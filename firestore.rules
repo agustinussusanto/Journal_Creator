@@ -15,6 +15,7 @@ service cloud.firestore {
     // Document ID: email
     // Fields:
     //   - email: string (required)
+    //   - password: string (required)
     //   - addedAt: string (required)
     //
     // Collection: otp_codes
@@ -37,7 +38,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
+      return isAuthenticated() && 
+        (exists(/databases/$(database)/documents/admins/$(request.auth.token.email)) ||
+         (request.auth.token.email == "agustinus.id01@gmail.com" && request.auth.token.email_verified == true));
     }
 
     match /admins/{email} {
