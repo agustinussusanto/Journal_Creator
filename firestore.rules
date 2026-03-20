@@ -46,7 +46,7 @@ service cloud.firestore {
     }
 
     match /allowed_emails/{email} {
-      // Anyone can check if their email is in the whitelist
+      // Anyone can check if their email is in the whitelist (needed for login)
       allow get: if true;
       // Only admins can list or write
       allow list, write: if isAdmin();
@@ -71,7 +71,7 @@ service cloud.firestore {
 
     match /rate_limits/{email} {
       allow get: if true;
-      allow set, update: if true;
+      allow create, update: if true;
       allow list: if false;
     }
   }

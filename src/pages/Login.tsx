@@ -92,24 +92,32 @@ export default function Login() {
       const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
 
       if (!serviceId || !templateId || !publicKey) {
-        throw new Error('EmailJS is not configured in .env');
+        console.warn(`[DEV MODE] EmailJS not configured. Your OTP is: ${generatedOtp}`);
+        setError(`[DEV MODE] EmailJS not configured. Your OTP is: ${generatedOtp}`);
+      } else {
+        try {
+          await emailjs.send(
+            serviceId,
+            templateId,
+            {
+              to_email: email,
+              otp_code: generatedOtp,
+            },
+            publicKey
+          );
+        } catch (emailErr: any) {
+          console.error('EmailJS Error:', emailErr);
+          console.warn(`[DEV MODE] Your OTP is: ${generatedOtp}`);
+          setError(`[DEV MODE] EmailJS failed. Your OTP is: ${generatedOtp}`);
+        }
       }
-
-      await emailjs.send(
-        serviceId,
-        templateId,
-        {
-          to_email: email,
-          otp_code: generatedOtp,
-        },
-        publicKey
-      );
 
       setStep('OTP');
       setCountdown(60);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Failed to send OTP. Please try again.');
+      console.error('OTP Error:', err);
+      const errorMessage = err?.text || err?.message || 'Failed to send OTP. Please try again.';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
