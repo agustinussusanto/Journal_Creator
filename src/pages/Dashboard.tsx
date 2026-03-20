@@ -703,6 +703,18 @@ Berikan penjelasan singkat (1-2 kalimat) mengapa setiap judul tersebut kuat seca
                 >
                   AI Journal Analyst
                 </button>
+                <button 
+                  onClick={() => navigate('/journal-maker')}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-colors"
+                >
+                  Journal Maker
+                </button>
+                <button 
+                  onClick={() => navigate('/ebook-maker')}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-colors"
+                >
+                  Ebook Maker
+                </button>
               </nav>
             </div>
             <div className="flex items-center gap-4">

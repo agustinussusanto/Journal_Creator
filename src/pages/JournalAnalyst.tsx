@@ -280,6 +280,18 @@ export default function JournalAnalyst() {
                 >
                   AI Journal Analyst
                 </button>
+                <button 
+                  onClick={() => navigate('/journal-maker')}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-colors"
+                >
+                  Journal Maker
+                </button>
+                <button 
+                  onClick={() => navigate('/ebook-maker')}
+                  className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-colors"
+                >
+                  Ebook Maker
+                </button>
               </nav>
             </div>
             

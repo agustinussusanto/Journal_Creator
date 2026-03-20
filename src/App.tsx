@@ -4,6 +4,8 @@ import Register from './pages/Register';
 import Admin from './pages/Admin';
 import Dashboard from './pages/Dashboard';
 import JournalAnalyst from './pages/JournalAnalyst';
+import JournalMaker from './pages/JournalMaker';
+import EbookMaker from './pages/EbookMaker';
 import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
@@ -26,6 +28,16 @@ export default function App() {
         <Route path="/journal-analyst" element={
           <ProtectedRoute>
             <JournalAnalyst />
+          </ProtectedRoute>
+        } />
+        <Route path="/journal-maker" element={
+          <ProtectedRoute>
+            <JournalMaker />
+          </ProtectedRoute>
+        } />
+        <Route path="/ebook-maker" element={
+          <ProtectedRoute>
+            <EbookMaker />
           </ProtectedRoute>
         } />
       </Routes>
